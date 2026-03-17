@@ -14,6 +14,19 @@ class GraphWaveletEncoder(object):
     compatible APIs: __call__, forward, and to(device).
     '''
     def __init__(self, scales, sigma: float = 2.0, eps: float = 1e-8, device=torch.device('cpu')):
+        '''
+        Args:
+            scales: Sequence of positive ints defining wavelet scales. Each scale s
+                produces a wavelet W_s f = |P^s f - P^{2s} f|. More scales capture
+                finer multi-resolution structure but increase output width and the
+                max diffusion power (2 * max(scales)).
+            sigma: Bandwidth for the Gaussian edge-weight kernel when edge_attr is
+                present: w = exp(-dist^2 / sigma^2). Ignored if the graph has no
+                edge attributes (unweighted adjacency is used instead).
+            eps: Floor value for the degree vector to avoid division by zero in
+                D^{-1} when computing the lazy random walk.
+            device: Torch device for all internal computations (e.g. torch.device('cuda')).
+        '''
         self.scales = scales
         self.sigma = sigma
         self.device = device
@@ -135,6 +148,21 @@ class GraphWaveletEncoder(object):
 
     def encode(self, graph):
         '''
+        Args:
+            graph: A PyTorch Geometric ``torch_geometric.data.Data`` or
+                ``Batch`` object. Required attributes:
+                - ``x``:          Node feature matrix [total_nodes, F].
+                - ``edge_index``: COO edge indices [2, E].
+                Optional attributes:
+                - ``batch``:      Graph membership vector [total_nodes] (present
+                                  in ``Batch`` objects; omit for a single graph).
+                - ``ptr``:        Cumulative node counts per graph (auto-created
+                                  by ``Batch.from_data_list``).
+                - ``edge_attr``:  Edge attribute matrix [E, D]. If provided, the
+                                  first column (``edge_attr[:, 0]``) is treated as
+                                  a distance and converted to weights via a
+                                  Gaussian kernel controlled by ``sigma``.
+
         Returns:
             features: [B, N, num_features_per_node] wavelet features
         '''

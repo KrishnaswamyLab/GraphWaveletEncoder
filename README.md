@@ -4,7 +4,11 @@ Graph wavelet scattering transform encoder for [PyTorch Geometric](https://pytor
 
 ## Installation
 
-From source (for now):
+```bash
+pip install graph-wavelet-encoder
+```
+
+For development (editable install):
 
 ```bash
 pip install -e .

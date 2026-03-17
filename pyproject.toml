@@ -7,7 +7,7 @@ name = "graph-wavelet-encoder"
 version = "0.1.0"
 description = "Graph wavelet scattering transform encoder for PyTorch Geometric"
 readme = "README.md"
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 requires-python = ">=3.8"
 authors = [
     { name = "Chen Liu", email = "chen.liu.cl2482@yale.edu" }
@@ -16,7 +16,7 @@ keywords = ["graph", "wavelet", "scattering", "torch-geometric", "neural-network
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
+    "License :: Other/Proprietary License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
@@ -39,9 +39,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/your-username/graph-wavelet-encoder"
-Repository = "https://github.com/your-username/graph-wavelet-encoder"
-Documentation = "https://github.com/your-username/graph-wavelet-encoder#readme"
+Homepage = "https://github.com/KrishnaswamyLab/GraphWaveletEncoder"
+Repository = "https://github.com/KrishnaswamyLab/GraphWaveletEncoder"
+Documentation = "https://github.com/KrishnaswamyLab/GraphWaveletEncoder#readme"
 
 [tool.setuptools.packages.find]
 where = ["src"]
