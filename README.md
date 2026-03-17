@@ -54,9 +54,6 @@ features = encoder.encode(graph)  # [batch_size, num_nodes, num_features_per_nod
 
 The encoder uses a lazy random-walk matrix and produces zeroth-, first-, and second-order scattering coefficients. See the docstrings in `graph_wavelet_encoder.encoder` for details.
 
-## Development
-
-- **Package layout:** [src layout](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/) — package lives under `src/graph_wavelet_encoder/`.
 
 ### Testing and benchmarking
 
