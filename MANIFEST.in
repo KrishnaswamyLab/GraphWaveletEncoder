@@ -1,0 +1,2 @@
+include README.md LICENSE pyproject.toml
+recursive-include src *
