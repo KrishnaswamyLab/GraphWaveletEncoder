@@ -3,6 +3,8 @@ Tests for GraphWaveletEncoder: correctness and throughput benchmarks.
 
     pytest tests/test_encoder.py -v -s
 """
+import gc
+import resource
 import time
 
 import numpy as np
@@ -200,6 +202,71 @@ class TestDevice:
         assert out.device.type == "cuda"
 
 
+class TestForwardAndCall:
+    """forward() and __call__() must behave identically to encode()."""
+
+    def test_call_matches_encode(self):
+        data = _make_graph(15, seed=77)
+        encoder = GraphWaveletEncoder(scales=(1, 2, 4), device=torch.device("cpu"))
+        out_encode = encoder.encode(data)
+        out_call = encoder(data)
+        torch.testing.assert_close(out_call, out_encode)
+
+    def test_forward_matches_encode(self):
+        data = _make_graph(15, seed=77)
+        encoder = GraphWaveletEncoder(scales=(1, 2, 4), device=torch.device("cpu"))
+        out_encode = encoder.encode(data)
+        out_forward = encoder.forward(data)
+        torch.testing.assert_close(out_forward, out_encode)
+
+    def test_call_with_batch(self):
+        batch = _make_batch(3, 10, seed=42)
+        encoder = GraphWaveletEncoder(scales=(1, 2), device=torch.device("cpu"))
+        out_encode = encoder.encode(batch)
+        out_call = encoder(batch)
+        torch.testing.assert_close(out_call, out_encode)
+
+
+class TestToDevice:
+    """.to(device) updates self.device and returns self."""
+
+    def test_to_returns_self(self):
+        encoder = GraphWaveletEncoder(scales=(1, 2), device=torch.device("cpu"))
+        result = encoder.to("cpu")
+        assert result is encoder
+
+    def test_to_updates_device_string(self):
+        encoder = GraphWaveletEncoder(scales=(1, 2), device=torch.device("cpu"))
+        encoder.to("cpu")
+        assert encoder.device == torch.device("cpu")
+
+    def test_to_updates_device_torch_device(self):
+        encoder = GraphWaveletEncoder(scales=(1,), device=torch.device("cpu"))
+        encoder.to(torch.device("cpu"))
+        assert encoder.device == torch.device("cpu")
+
+    def test_to_none_is_noop(self):
+        encoder = GraphWaveletEncoder(scales=(1, 2), device=torch.device("cpu"))
+        result = encoder.to(None)
+        assert result is encoder
+        assert encoder.device == torch.device("cpu")
+
+    @pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+    def test_to_cuda_and_encode(self):
+        encoder = GraphWaveletEncoder(scales=(1, 2)).to("cuda")
+        assert encoder.device == torch.device("cuda")
+        data = _make_graph(10)
+        out = encoder(data)
+        assert out.device.type == "cuda"
+
+    def test_chaining(self):
+        encoder = GraphWaveletEncoder(scales=(1, 2, 4)).to("cpu")
+        assert encoder.device == torch.device("cpu")
+        data = _make_graph(8)
+        out = encoder(data)
+        assert out.shape == (1, 8, encoder.num_features_per_node)
+
+
 # ---------------------------------------------------------------------------
 # Throughput benchmarks
 # ---------------------------------------------------------------------------
@@ -225,29 +292,65 @@ BENCHMARK_CONFIGS = [
 ]
 
 
-def _time_encode(encoder, data, num_runs: int = 3, warmup: int = 1):
-    """Return mean wall-clock seconds per encode() call."""
+def _get_rss_mb():
+    """Current process RSS in MB (includes PyTorch's C++ allocator)."""
+    return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+
+
+def _benchmark_encode(encoder, data, device, num_runs: int = 3, warmup: int = 1):
+    """Benchmark a single config: return (mean_seconds, rss_delta_mb, peak_gpu_mb).
+
+    rss_delta_mb — RSS increase (MB) across the timed runs (process-level).
+    peak_gpu_mb  — peak GPU memory delta (MB), or None when on CPU.
+    """
+    use_cuda = device.type == "cuda"
+
     for _ in range(warmup):
         encoder.encode(data)
-    if torch.cuda.is_available():
+    if use_cuda:
         torch.cuda.synchronize()
+
+    gc.collect()
+    if use_cuda:
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats(device)
+        gpu_before = torch.cuda.memory_allocated(device)
+
+    rss_before = _get_rss_mb()
+
     t0 = time.perf_counter()
     for _ in range(num_runs):
         encoder.encode(data)
-    if torch.cuda.is_available():
+    if use_cuda:
         torch.cuda.synchronize()
-    return (time.perf_counter() - t0) / num_runs
+    elapsed = time.perf_counter() - t0
+
+    rss_after = _get_rss_mb()
+    rss_delta_mb = max(0.0, rss_after - rss_before)
+
+    peak_gpu_mb = None
+    if use_cuda:
+        gpu_peak = torch.cuda.max_memory_allocated(device)
+        peak_gpu_mb = (gpu_peak - gpu_before) / (1024 ** 2)
+
+    return elapsed / num_runs, rss_delta_mb, peak_gpu_mb
 
 
-def test_throughput():
-    """Throughput sweep over graph sizes, batch sizes, and scale configs."""
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+def _run_throughput_sweep(device):
+    """Run the benchmark sweep on a single device and return formatted lines."""
+    label = str(device).upper()
+    has_gpu = device.type == "cuda"
 
-    header = f"{'nodes':>7} {'batch':>6} {'scales':>18} {'time (s)':>10} {'ms/graph':>10} {'graphs/s':>10}"
+    gpu_cols = f"  {'GPU MB':>8}" if has_gpu else ""
+    header = (
+        f"{'nodes':>7} {'batch':>6} {'scales':>18}"
+        f"  {'time (s)':>10} {'ms/graph':>10} {'graphs/s':>10}"
+        f"  {'RAM MB':>8}{gpu_cols}"
+    )
     sep = "-" * len(header)
     lines = [
         "",
-        "GraphWaveletEncoder throughput (mean of 3 runs)",
+        f"GraphWaveletEncoder throughput — {label}  (mean of 3 runs)",
         sep,
         header,
         sep,
@@ -256,13 +359,29 @@ def test_throughput():
     for num_nodes, batch_size, scales in BENCHMARK_CONFIGS:
         data = _make_batch(batch_size, num_nodes)
         encoder = GraphWaveletEncoder(scales=scales, device=device)
-        mean_s = _time_encode(encoder, data)
+        mean_s, ram_mb, gpu_mb = _benchmark_encode(encoder, data, device)
         ms_per_graph = mean_s * 1000 / batch_size
         graphs_per_sec = batch_size / mean_s
         scales_str = ",".join(str(s) for s in scales)
+        gpu_str = f"  {gpu_mb:>8.1f}" if gpu_mb is not None else ""
         lines.append(
-            f"{num_nodes:>7} {batch_size:>6} {scales_str:>18} {mean_s:>10.4f} {ms_per_graph:>10.1f} {graphs_per_sec:>10.2f}"
+            f"{num_nodes:>7} {batch_size:>6} {scales_str:>18}"
+            f"  {mean_s:>10.4f} {ms_per_graph:>10.1f} {graphs_per_sec:>10.2f}"
+            f"  {ram_mb:>8.1f}{gpu_str}"
         )
 
     lines.append(sep)
+    return lines
+
+
+def test_throughput_cpu():
+    """Throughput + memory sweep on CPU."""
+    lines = _run_throughput_sweep(torch.device("cpu"))
+    print("\n".join(lines))
+
+
+@pytest.mark.skipif(not torch.cuda.is_available(), reason="CUDA not available")
+def test_throughput_gpu():
+    """Throughput + memory sweep on GPU."""
+    lines = _run_throughput_sweep(torch.device("cuda"))
     print("\n".join(lines))
