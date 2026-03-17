@@ -1,4 +1,4 @@
-# graph-wavelet-encoder
+# Graph Wavelet Encoder
 
 Graph wavelet scattering transform encoder for [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/). Computes multi-scale wavelet features from graph structure and node signals using lazy random-walk diffusion.
 
