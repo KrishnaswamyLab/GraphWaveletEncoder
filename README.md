@@ -5,7 +5,6 @@
 [![Twitter Follow](https://img.shields.io/twitter/follow/KrishnaswamyLab.svg?style=social)](https://x.com/KrishnaswamyLab)
 [![Twitter](https://img.shields.io/twitter/follow/ChenLiu-1996.svg?style=social)](https://twitter.com/ChenLiu_1996)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-ChenLiu-1996?color=blue)](https://www.linkedin.com/in/chenliu1996/)
-[![Google Scholar](https://img.shields.io/badge/Google_Scholar-Chen-4a86cf?logo=google-scholar&logoColor=white)](https://scholar.google.com/citations?user=3rDjnykAAAAJ&sortby=pubdate)
 <br>
 [![Latest PyPI version](https://img.shields.io/pypi/v/graph-wavelet-encoder.svg)](https://pypi.org/project/graph-wavelet-encoder/)
 [![PyPI download 3 month](https://static.pepy.tech/badge/graph-wavelet-encoder)](https://pepy.tech/projects/graph-wavelet-encoder)
